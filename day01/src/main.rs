@@ -1,3 +1,5 @@
+#![deny(clippy::pedantic)]
+
 /// Solve the Day01 Part1 puzzle
 ///
 /// This list represents the Calories of the food carried by five Elves:
@@ -62,7 +64,7 @@ fn part2(input: &str) {
             Err(std::num::ParseIntError { .. }) => {
                 // Hit an empty line, check if the current accumulation is more than any
                 // previously seen. If so, save it and break from the loop.
-                for max_calorie in max_calories.iter_mut() {
+                for max_calorie in &mut max_calories {
                     if curr_calories > *max_calorie {
                         *max_calorie = curr_calories;
                         break;

@@ -16,8 +16,6 @@ const fn parse_input_setup() -> (
     [usize; NUMBER_OF_COLUMNS],
     usize,
 ) {
-    let mut input = INPUT;
-
     let mut input_index = 0;
     let mut col_index = 0;
 
@@ -30,16 +28,16 @@ const fn parse_input_setup() -> (
     // Parse the initial input column state
     loop {
         // Found the double newline between the setup and the instructions
-        if input[input_index] == b'\n' && input[input_index + 1] == b'\n' {
+        if INPUT[input_index] == b'\n' && INPUT[input_index + 1] == b'\n' {
             input_index += 2;
             break;
         }
 
         // Get the current byte of the index
-        let curr_byte = input[input_index];
+        let curr_byte = INPUT[input_index];
 
         if input_index % 4 == 1 {
-            if matches!(curr_byte, b'A'..=b'Z') {
+            if curr_byte.is_ascii_uppercase() {
                 let curr_col_next_index = &mut col_next_index[col_index];
                 cols[col_index][*curr_col_next_index] = Some(curr_byte);
 
@@ -106,12 +104,7 @@ const fn parse_input_setup() -> (
     (cols, col_next_index, input_index)
 }
 
-const fn part1() -> (
-    [[Option<u8>; COLUMN_HEIGHT]; NUMBER_OF_COLUMNS],
-    [usize; NUMBER_OF_COLUMNS],
-) {
-    let mut score = 0;
-
+const fn part1() -> [char; NUMBER_OF_COLUMNS] {
     let (mut cols, mut col_next_index, mut input_index) = parse_input_setup();
 
     // Now that the columns are parsed and at the beginning of each array, we can begin
@@ -123,7 +116,7 @@ const fn part1() -> (
 
         // Sanity check we are at the beginning of each parsed line
         assert!(
-            INPUT[input_index + 0] == b'm'
+            INPUT[input_index] == b'm'
                 && INPUT[input_index + 1] == b'o'
                 && INPUT[input_index + 2] == b'v'
                 && INPUT[input_index + 3] == b'e'
@@ -162,7 +155,7 @@ const fn part1() -> (
         };
 
         assert!(
-            INPUT[input_index + 0] == b' '
+            INPUT[input_index] == b' '
                 && INPUT[input_index + 1] == b'f'
                 && INPUT[input_index + 2] == b'r'
                 && INPUT[input_index + 3] == b'o'
@@ -209,15 +202,23 @@ const fn part1() -> (
         input_index += 1;
     }
 
-    (cols, col_next_index)
+    let mut col_index = 0;
+    let mut solution = ['?'; NUMBER_OF_COLUMNS];
+    loop {
+        if col_index >= NUMBER_OF_COLUMNS {
+            break;
+        }
+
+        let curr_height = col_next_index[col_index] - 1;
+        solution[col_index] = cols[col_index][curr_height].unwrap() as char;
+
+        col_index += 1;
+    }
+
+    solution
 }
 
-const fn part2() -> (
-    [[Option<u8>; COLUMN_HEIGHT]; NUMBER_OF_COLUMNS],
-    [usize; NUMBER_OF_COLUMNS],
-) {
-    let mut score = 0;
-
+const fn part2() -> [char; NUMBER_OF_COLUMNS] {
     let (mut cols, mut col_next_index, mut input_index) = parse_input_setup();
 
     // Now that the columns are parsed and at the beginning of each array, we can begin
@@ -229,7 +230,7 @@ const fn part2() -> (
 
         // Sanity check we are at the beginning of each parsed line
         assert!(
-            INPUT[input_index + 0] == b'm'
+            INPUT[input_index] == b'm'
                 && INPUT[input_index + 1] == b'o'
                 && INPUT[input_index + 2] == b'v'
                 && INPUT[input_index + 3] == b'e'
@@ -268,7 +269,7 @@ const fn part2() -> (
         };
 
         assert!(
-            INPUT[input_index + 0] == b' '
+            INPUT[input_index] == b' '
                 && INPUT[input_index + 1] == b'f'
                 && INPUT[input_index + 2] == b'r'
                 && INPUT[input_index + 3] == b'o'
@@ -319,37 +320,26 @@ const fn part2() -> (
         input_index += 1;
     }
 
-    (cols, col_next_index)
+    let mut col_index = 0;
+    let mut solution = ['?'; NUMBER_OF_COLUMNS];
+    loop {
+        if col_index >= NUMBER_OF_COLUMNS {
+            break;
+        }
+
+        let curr_height = col_next_index[col_index] - 1;
+        solution[col_index] = cols[col_index][curr_height].unwrap() as char;
+
+        col_index += 1;
+    }
+
+    solution
 }
 
 fn main() {
-    // Print the results from part 1
-    let (cols, col_next_index) = part1();
-    println!("{col_next_index:?}");
-    for (index, col) in cols.iter().enumerate() {
-        println!(
-            "{index}: {:?}",
-            col.iter().flatten().map(|x| *x as char).collect::<Vec<_>>()
-        );
-    }
-    for (col_index, col) in cols.iter().enumerate() {
-        let curr_height = col_next_index[col_index] - 1;
-        print!("{}", col[curr_height].unwrap() as char);
-    }
-    println!();
+    const PART1_SOLUTION: [char; 9] = part1();
+    println!("{PART1_SOLUTION:?}");
 
-    // Print the results from part 2
-    let (cols, col_next_index) = part2();
-    println!("{col_next_index:?}");
-    for (index, col) in cols.iter().enumerate() {
-        println!(
-            "{index}: {:?}",
-            col.iter().flatten().map(|x| *x as char).collect::<Vec<_>>()
-        );
-    }
-    for (col_index, col) in cols.iter().enumerate() {
-        let curr_height = col_next_index[col_index] - 1;
-        print!("{}", col[curr_height].unwrap() as char);
-    }
-    println!();
+    const PART2_SOLUTION: [char; 9] = part2();
+    println!("{PART2_SOLUTION:?}");
 }

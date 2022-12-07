@@ -2,7 +2,7 @@ const INPUT: &[u8] = include_bytes!("../input");
 
 /// Find the starting character of the first unique `n` bytes in `INPUT`
 fn find_n_unique_bytes(n: usize, input: &[u8]) -> usize {
-    'next_chunk: for curr_index in 0..input.len() {
+    'next_chunk: for curr_index in 0..(input.len().saturating_sub(n)) {
         let mut seen = 0u64;
         for letter_index in 0..n {
             // Get the value of the

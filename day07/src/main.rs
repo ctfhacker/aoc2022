@@ -65,7 +65,7 @@ fn main() {
     let mut curr_best = u32::MAX;
 
     // Find the smallest directory that would free up enough space
-    for (_, size) in &curr_sizes {
+    for size in curr_sizes.values() {
         if *size >= size_needed && *size < curr_best {
             curr_best = *size;
         }

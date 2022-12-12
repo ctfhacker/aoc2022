@@ -1,6 +1,4 @@
 use std::collections::VecDeque;
-use std::ops::Add;
-use std::ops::Mul;
 
 const INPUT: &str = include_str!("../input");
 
@@ -52,27 +50,22 @@ impl Monkey {
         // Parse line 2: Monkey items
         // Expected input:
         // Starting items: 60, 84, 84, 65
-        let items_iter = iter.next().unwrap().split(":").skip(1).next().unwrap();
+        let items_iter = iter.next().unwrap().split(':').nth(1).unwrap();
         let mut items = VecDeque::new();
 
-        for item in items_iter.split(" ").filter(|x| !x.is_empty()) {
+        for item in items_iter.split(' ').filter(|x| !x.is_empty()) {
             println!("{item}");
             let item = item
-                .replace(",", "")
+                .replace(',', " ")
                 .parse::<u64>()
-                .map_err(|e| Day11Error::Num(e))?;
+                .map_err(Day11Error::Num)?;
 
             items.push_back(item);
         }
 
         let op_line = iter.next().unwrap();
 
-        let mut op_iter = op_line
-            .split(" new = old ")
-            .skip(1)
-            .next()
-            .unwrap()
-            .split(" ");
+        let mut op_iter = op_line.split(" new = old ").nth(1).unwrap().split(' ');
 
         let mut op = match op_iter.next() {
             Some("+") => Operation::Add,
@@ -85,7 +78,7 @@ impl Monkey {
                 op = Operation::Square;
                 0
             }
-            Some(val) => val.parse::<u64>().map_err(|e| Day11Error::Num(e))?,
+            Some(val) => val.parse::<u64>().map_err(Day11Error::Num)?,
             _ => return Err(Day11Error::UnknownOperation(op_line)),
         };
 
@@ -96,7 +89,7 @@ impl Monkey {
             .nth(1)
             .unwrap()
             .parse::<u64>()
-            .map_err(|e| Day11Error::Num(e))?;
+            .map_err(Day11Error::Num)?;
 
         let true_monkey = iter
             .next()
@@ -105,7 +98,7 @@ impl Monkey {
             .nth(1)
             .unwrap()
             .parse::<usize>()
-            .map_err(|e| Day11Error::Num(e))?;
+            .map_err(Day11Error::Num)?;
 
         let false_monkey = iter
             .next()
@@ -114,7 +107,7 @@ impl Monkey {
             .nth(1)
             .unwrap()
             .parse::<usize>()
-            .map_err(|e| Day11Error::Num(e))?;
+            .map_err(Day11Error::Num)?;
 
         Ok(Monkey {
             items,
@@ -136,7 +129,6 @@ fn main() -> Result<(), Day11Error> {
             Operation::Add => old + val,
             Operation::Mul => old * val,
             Operation::Square => old * old,
-            _ => unreachable!(),
         }
     }
 

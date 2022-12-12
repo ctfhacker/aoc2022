@@ -42,11 +42,11 @@ enum Execution {
 }
 
 impl Cpu {
-    pub fn from_input(input: &str) -> Result<Self, Day10Error> {
+    pub fn from_input() -> Result<Self, Day10Error> {
         let mut instructions = Vec::new();
 
         // Parse each instruction line
-        for line in INPUT.split("\n") {
+        for line in INPUT.split('\n') {
             if line.is_empty() {
                 continue;
             }
@@ -133,7 +133,7 @@ impl Cpu {
     }
 
     /// Print the CPU state
-    pub fn print(&self) {
+    pub fn _print(&self) {
         println!("------- Cycle {:03} -------", self.cycles_executed);
         println!(" X: {:4}", self.registers[Register::X as usize]);
         println!("IP: {:4}", self.ip);
@@ -183,7 +183,7 @@ impl TryFrom<&str> for Instruction {
     type Error = Day10Error;
 
     fn try_from(line: &str) -> Result<Self, Self::Error> {
-        let mut iter = line.split(" ");
+        let mut iter = line.split(' ');
 
         // Parse the opcode from the instruction
         let opcode = iter
@@ -209,7 +209,7 @@ impl TryFrom<&str> for Instruction {
 }
 
 fn main() -> Result<(), Day10Error> {
-    let mut cpu = Cpu::from_input(&INPUT)?;
+    let mut cpu = Cpu::from_input()?;
     let mut execution = Execution::Continue;
 
     let mut sum = 0;
@@ -241,11 +241,10 @@ fn main() -> Result<(), Day10Error> {
 
         // Get the new cycles executed
         let cycles = cpu.cycles_executed as i32;
-        let x_pos = cpu.registers[Register::X as usize];
 
         // Calculate the signal strengths for part 1
         if [20, 60, 100, 140, 180, 220].contains(&cycles) {
-            sum += cycles as i32 * cpu.registers[Register::X as usize];
+            sum += cycles * cpu.registers[Register::X as usize];
         }
     }
 

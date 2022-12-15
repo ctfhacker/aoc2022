@@ -1,4 +1,7 @@
-const INPUT: &str = include_str!("../input");
+use rand::prelude::*;
+
+const INPUT: &str = include_str!("/home/user/workspace/chris-aoc2022/2022/15/input.txt");
+// const INPUT: &str = include_str!("../input");
 
 /// Calculate the Manhattan distance
 fn manhattan_distance(first: (isize, isize), second: (isize, isize)) -> isize {
@@ -25,12 +28,12 @@ fn main() {
         // Sensor at x=1326566, y=3575946: closest beacon is at x=1374835, y=2000000
         let mut iter = line.split(' ').skip(2);
         let sensor_x = iter.next().unwrap()[2..]
-            .replace(",", "")
+            .replace(',', "")
             .parse::<isize>()
             .unwrap();
 
         let sensor_y = iter.next().unwrap()[2..]
-            .replace(":", "")
+            .replace(':', "")
             .parse::<isize>()
             .unwrap();
 
@@ -38,7 +41,7 @@ fn main() {
         let mut iter = iter.skip(4);
 
         let beacon_x = iter.next().unwrap()[2..]
-            .replace(",", "")
+            .replace(',', "")
             .parse::<isize>()
             .unwrap();
 
@@ -50,12 +53,17 @@ fn main() {
     let mut missing_beacon_x = 2000000;
     let mut missing_beacon_y = 2000000;
 
+    let mut rng = rand::thread_rng();
+
     // Start the missing beacon of the grid at (2000000, 2000000).
     // Look to see if the current missing beacon is in range of the current sensor.
     // If it is, move the missing beacon to just out of range of the current sensor.
     // Repeat this process until the beacon is outside the range of all sensors
     loop {
         let mut beacon_moved = false;
+
+        // Shuffle the ordering of the signal/beacon pairs to ensure we aren't caught in a loop
+        pairs.shuffle(&mut rng);
 
         for ((sensor_x, sensor_y), (beacon_x, beacon_y)) in &pairs {
             // Calculate the manhattan distance to know the maximum distance from this sensor
@@ -66,6 +74,7 @@ fn main() {
             // Check if this sensor can reach the requested row
             let distance_to_wanted_row = (wanted_row - sensor_y).abs();
 
+            // Solve for part 1
             if distance_to_wanted_row <= distance {
                 let curr_min_x = sensor_x - (distance - distance_to_wanted_row);
                 let curr_max_x = sensor_x + (distance - distance_to_wanted_row);
@@ -75,8 +84,8 @@ fn main() {
             }
 
             if (*sensor_x, *sensor_y) == (missing_beacon_x, missing_beacon_y) {
-                // missing_beacon_x += 1;
-                missing_beacon_x += 2;
+                missing_beacon_x += 1;
+                // missing_beacon_x += 2;
             }
 
             // Check if the missing beacon is in range of this sensor. If so, move it out.
@@ -91,27 +100,31 @@ fn main() {
                 let movement = (distance - vert_dist - horiz_dist).max(1);
 
                 if (movement == 1 && rdtsc() % 4 == 0) || movement > 1 {
-                    if *sensor_x > missing_beacon_x {
+                    if *sensor_x > missing_beacon_x && missing_beacon_x > movement {
                         // Move the test point left
                         missing_beacon_x -= movement;
-                    } else if *sensor_x < missing_beacon_x {
+                    } else if *sensor_x < missing_beacon_x
+                        && (missing_beacon_x + movement) <= 4000000
+                    {
                         // Move the test point right
                         missing_beacon_x += movement;
                     }
                 }
 
                 if (movement == 1 && rdtsc() % 4 == 0) || movement > 1 {
-                    if *sensor_y > missing_beacon_y {
+                    if *sensor_y > missing_beacon_y && missing_beacon_y > movement {
                         // Move the test point up
                         missing_beacon_y -= movement;
-                    } else if *sensor_y < missing_beacon_y {
+                    } else if *sensor_y < missing_beacon_y
+                        && (missing_beacon_y + movement) <= 4000000
+                    {
                         // Move the test point down
                         missing_beacon_y += movement;
                     }
                 }
 
-                missing_beacon_x = missing_beacon_x.max(0).min(4000000);
-                missing_beacon_y = missing_beacon_y.max(0).min(4000000);
+                missing_beacon_x = missing_beacon_x.clamp(0, 4000000);
+                missing_beacon_y = missing_beacon_y.clamp(0, 4000000);
 
                 beacon_moved = true;
             }

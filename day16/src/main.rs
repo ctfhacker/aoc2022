@@ -1,6 +1,7 @@
 #![feature(result_option_inspect)]
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use itertools::Itertools;
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -13,32 +14,19 @@ fn rdtsc() -> u64 {
 
 fn run_simulation<'a>(
     core_id: usize,
-    name_indexes: HashMap<&str, usize>,
-    names: Vec<&str>,
-    flows: Vec<usize>,
-    neighbors: Vec<Vec<&str>>,
-    distances: Vec<HashMap<&str, i32>>,
-    best_flows: Vec<(usize, &'a str)>,
+    name_indexes: Arc<HashMap<&str, usize>>,
+    names: Arc<Vec<&str>>,
+    flows: Arc<Vec<usize>>,
+    neighbors: Arc<Vec<Vec<&str>>>,
+    distances: Arc<Vec<HashMap<usize, usize>>>,
     best_score: Arc<AtomicUsize>,
-    corpus: Arc<Mutex<HashSet<Vec<&'a str>>>>,
+    corpus: Arc<Mutex<HashSet<Vec<usize>>>>,
+    max_time: isize,
+    valuables: BTreeSet<usize>,
 ) {
-    let orig_test = best_flows
-        .iter()
-        .filter(|(flow, name)| *name != "AA")
-        .map(|(_flow, name)| *name)
-        .rev()
-        .collect::<Vec<_>>();
+    let orig_test = valuables.iter().copied().collect::<Vec<_>>();
 
-    /*
-    let orig_test = vec![
-        "OZ", "YI", "MZ", "UA", "AW", "YZ", "EL", "OY", "VO", "FL", "FM", "CS", "UU", "LS", "XY",
-        "PE", "QX", "OQ", "OH", "QR", "YD", "OF", "CD", "DE", "ZV", "RD", "KY", "RJ", "FX", "WI",
-        "GQ", "WW", "FH", "BV", "AR", "QQ", "VA", "MG", "VX", "GV", "CR", "ZE", "EG", "TU", "DY",
-        "KK", "AT", "VN", "EJ", "WZ", "MC", "XL", "OR", "QD", "ZP", "XC",
-    ];
-    */
-
-    let mut local_corpus = HashSet::new();
+    let mut local_corpus: HashSet<Vec<usize>> = HashSet::new();
     local_corpus.insert(orig_test.clone());
 
     let mut local_best_score = 0;
@@ -49,31 +37,30 @@ fn run_simulation<'a>(
 
     let mut iters = 0;
 
-    let len = orig_test.len();
-    println!("Len: {len}");
-
-    for iters in 0..0xfffffff {
+    for iters in 0..0x2ffff {
         // Stats timer every second to dump the performance of the simulations
-        if stats_timer.elapsed() > std::time::Duration::from_secs(1) {
+        if stats_timer.elapsed() > std::time::Duration::from_secs(5) {
             if local_best_score > best_score.load(Ordering::SeqCst) {
                 best_score.store(local_best_score, Ordering::SeqCst);
             }
 
             local_best_score = best_score.load(Ordering::SeqCst);
 
+            /*
             println!(
                 "{core_id} | Msims/sec: {:8.2} | Local best score: {local_best_score}",
                 iters as f64 / start.elapsed().as_secs_f64() / 1024. / 1024.
             );
+            */
 
             // Sync local corpus with the global corpus
             if let Ok(mut corpus) = corpus.try_lock() {
                 for c in &local_corpus {
-                    corpus.insert(c.to_vec());
+                    corpus.insert(c.iter().map(|x| *x).collect());
                 }
 
                 for c in corpus.iter() {
-                    local_corpus.insert(c.to_vec());
+                    local_corpus.insert(c.clone());
                 }
             }
 
@@ -91,15 +78,8 @@ fn run_simulation<'a>(
             best_steps.clone()
         };
 
-        // Reset values for the simulation
-        let mut minute = 1;
-        let mut score = 0;
-        let mut curr_increment = 0;
-        let mut curr_node = "AA";
-        let mut dest_node = "AA";
-
         // Randomly mutate the current test steps
-        for _ in 0..(rdtsc() % 48 + 1) {
+        for _ in 0..(rdtsc() % 64 + 1) {
             let index1 = rdtsc() as usize % curr_test.len();
             let index2 = rdtsc() as usize % curr_test.len();
             if index1 == index2 {
@@ -109,66 +89,104 @@ fn run_simulation<'a>(
             curr_test.swap(index1, index2);
         }
 
-        let mut steps_left = 0;
-        let mut test_index = 0;
-        let mut next_increment = 0;
+        // Reset values for the simulation
+        let mut score = 0;
 
-        // let curr_test = vec!["DD", "BB", "JJ", "HH", "EE", "CC"];
+        let mut time_left = max_time;
+        let mut curr_node = name_indexes["AA"];
 
-        for _minute in 0..31 {
-            // println!("{minute:02} | {curr_node} -> {dest_node:?} | Dist left {steps_left:02} | Total pressure: {curr_increment}");
+        // Get the valuable destination node's not currently in the path
+        for dest_index in &curr_test {
+            let dist = distances[curr_node][&dest_index];
 
-            score += curr_increment;
+            // Each distance takes one time and turning on the valve takes one time
+            time_left -= dist as isize + 1;
 
-            if steps_left == 0 {
-                // Destination valve is now open
-                curr_increment += next_increment;
-                next_increment = 0;
-
-                if test_index < curr_test.len() {
-                    // Find the next destination node
-                    dest_node = curr_test[test_index];
-
-                    // Move the index to the next
-                    test_index += 1;
-
-                    // Increment the score based the current increment
-                    let curr_node_index = name_indexes[curr_node];
-                    let dest_node_index = name_indexes[&*dest_node];
-
-                    // Get the distance to the next destination node
-                    let dist = distances[curr_node_index][&*dest_node];
-
-                    //
-                    steps_left = dist;
-
-                    // Destination node is now the current node
-                    curr_node = dest_node;
-
-                    // the destination value is now open. add its pressure to the increment value per step
-                    next_increment = flows[dest_node_index];
-                }
-            } else {
-                steps_left -= 1;
+            // Cannot reach this destination in enough time to turn on the valve
+            if time_left <= 0 {
+                continue;
             }
+
+            // This valve will score its flow each remaining time step
+            let flow = flows[*dest_index];
+            score = score + time_left as usize * flow;
+
+            // Update the current node
+            curr_node = *dest_index;
         }
 
         if score > local_best_score {
-            println!("New Best Score: {score:4} || {curr_test:?}");
+            // println!("New Best Score: {score:4} || {curr_test:?}");
             local_best_score = score;
             best_steps = curr_test.clone();
             local_corpus.insert(curr_test);
         }
     }
+
+    if local_best_score > best_score.load(Ordering::SeqCst) {
+        best_score.store(local_best_score, Ordering::SeqCst);
+    }
+}
+
+fn naive(
+    name_indexes: HashMap<&str, usize>,
+    names: Vec<&str>,
+    flows: Vec<usize>,
+    distances: Vec<HashMap<usize, usize>>,
+    valuables: BTreeSet<usize>,
+    max_time: isize,
+) -> usize {
+    let starting_node = "AA";
+    let starting_index = name_indexes[starting_node];
+    let mut queue = VecDeque::new();
+    let curr_path: Vec<usize> = vec![starting_index];
+    queue.push_back((starting_index, curr_path, max_time, 0));
+
+    let mut best_score = 0;
+
+    while let Some((curr_node, curr_path, time_left, score)) = queue.pop_front() {
+        if score > best_score {
+            best_score = score;
+        }
+
+        // Get the valuable destination node's not currently in the path
+        for dest_index in &valuables {
+            if curr_path.contains(dest_index) {
+                continue;
+            }
+
+            let dist = distances[curr_node][dest_index];
+
+            // Each distance takes one time and turning on the valve takes one time
+            let curr_time_left = time_left - dist as isize - 1;
+
+            // Cannot reach this destination in enough time to turn on the valve
+            if curr_time_left <= 0 {
+                continue;
+            }
+
+            // This valve will score its flow each remaining time step
+            let flow = flows[*dest_index];
+            let curr_score = score + (curr_time_left as usize * flow);
+
+            // Create the new path containing this destination
+            let mut new_path = curr_path.clone();
+            new_path.push(*dest_index);
+            queue.push_back((*dest_index, new_path, curr_time_left, curr_score));
+        }
+    }
+
+    println!("Best score: {best_score} | Valuables: {}", valuables.len());
+
+    best_score
 }
 
 fn main() {
     let mut name_indexes = HashMap::new();
-    let mut names = Vec::new();
-    let mut flows = Vec::new();
-    let mut neighbors = Vec::new();
-    let mut distances = Vec::new();
-    let mut best_flows = Vec::new();
+    let mut names: Vec<&str> = Vec::new();
+    let mut flows: Vec<usize> = Vec::new();
+    let mut neighbors: Vec<Vec<&str>> = Vec::new();
+    // let mut best_flows = Vec::new();
 
     // Valve EG has flow rate=21; tunnels lead to valves WZ, OF, ZP, QD
     for line in INPUT.lines() {
@@ -181,49 +199,55 @@ fn main() {
         let curr_flow = iter
             .nth(2)
             .unwrap()
-            .split("=")
+            .split('=')
             .nth(1)
             .unwrap()
-            .replace(";", "")
+            .replace(';', "")
             .parse::<usize>()
             .unwrap();
 
         // Parse each of the neighbors
         let curr_neighbors = iter
             .skip(4)
-            .map(|x| x.split(',').nth(0).unwrap())
+            .map(|x| x.split(',').next().unwrap())
             .collect::<Vec<_>>();
+
+        // println!("{curr_name}: Neighbors: {curr_neighbors:?} Flow: {curr_flow}");
 
         // Insert each entry into the arrays
         let curr_index = name_indexes.len();
         name_indexes.insert(curr_name, curr_index);
         names.push(curr_name);
         flows.push(curr_flow);
-        best_flows.push((curr_flow, curr_name));
         neighbors.push(curr_neighbors);
     }
 
     let start = std::time::Instant::now();
 
+    let mut distances = Vec::new();
+
     // Calculate the distance from each node to each other node
-    for start_node in names.iter() {
+    for start_node_index in 0..names.len() {
         let mut seen = BTreeSet::new();
-        let mut queue = vec![(*start_node, 0)];
+        let mut queue = VecDeque::new();
+        queue.push_back((start_node_index, 0_usize));
         let mut curr_distances = HashMap::new();
 
-        while let Some((curr_node, curr_dist)) = queue.pop() {
-            curr_distances.insert(curr_node, curr_dist);
+        while let Some((curr_node, curr_dist)) = queue.pop_front() {
+            if curr_distances.insert(curr_node, curr_dist).is_some() {
+                panic!();
+            }
 
-            // Mark that this node has been seen
             seen.insert(curr_node);
 
-            let index = name_indexes.get(curr_node).unwrap();
-            let curr_neighbors = &neighbors[*index];
+            let curr_neighbors = &neighbors[curr_node];
 
             for neighbor in curr_neighbors {
                 // If this neighbor hasn't been seen, add it to the queue
-                if seen.insert(neighbor) {
-                    queue.push((neighbor, curr_dist + 1));
+                let neighbor_index = name_indexes[neighbor];
+
+                if seen.insert(neighbor_index) {
+                    queue.push_back((neighbor_index, curr_dist + 1));
                 }
             }
         }
@@ -233,19 +257,62 @@ fn main() {
 
     println!("Calculating all distances took {:?}", start.elapsed());
 
+    // Get the valves that have a flow rate as the target destinations
+    let valuables = flows
+        .iter()
+        .enumerate()
+        .filter_map(|(index, flow)| (names[index] != "AA" && *flow > 0).then_some(index))
+        .collect::<BTreeSet<_>>();
+
+    /*
+    for (i, k) in distances.iter().enumerate() {
+        let name = names[i];
+        if name == "AA" {
+            print!("{name} | ");
+            for (k, d) in k {
+                print!("{}={d}, ", names[*k]);
+            }
+            println!();
+        }
+    }
+    */
+
+    /*
+    naive(
+        name_indexes.clone(),
+        names.clone(),
+        flows.clone(),
+        distances.clone(),
+        valuables,
+        30,
+    );
+    */
+
     let best_score = Arc::new(AtomicUsize::new(0));
     let corpus = Arc::new(Mutex::new(HashSet::new()));
     let mut threads = Vec::new();
+    let orig_test = flows
+        .iter()
+        .enumerate()
+        .filter_map(|(index, flow)| (names[index] != "AA" && *flow > 0).then_some(index))
+        .collect::<BTreeSet<_>>();
 
-    for core_id in 1..8 {
+    // Get the read-only variables ready for threads
+    let name_indexes = Arc::new(name_indexes);
+    let names = Arc::new(names);
+    let flows = Arc::new(flows);
+    let neighbors = Arc::new(neighbors);
+    let distances = Arc::new(distances);
+
+    for core_id in 0..1 {
         let name_indexes = name_indexes.clone();
         let names = names.clone();
         let flows = flows.clone();
         let neighbors = neighbors.clone();
         let distances = distances.clone();
-        let best_flows = best_flows.clone();
         let best_score = best_score.clone();
         let corpus = corpus.clone();
+        let orig_test = orig_test.clone();
 
         let t = std::thread::spawn(move || {
             run_simulation(
@@ -255,14 +322,185 @@ fn main() {
                 flows,
                 neighbors,
                 distances,
-                best_flows,
                 best_score,
                 corpus,
+                30,
+                orig_test,
             )
         });
 
         threads.push(t);
     }
+
+    for t in threads {
+        let res = t.join();
+    }
+
+    /*
+    macro_rules! spawn_threads {
+        () => {{
+            let corpus = Arc::new(Mutex::new(HashSet::new()));
+            let mut threads = Vec::new();
+
+            for core_id in 0..2 {
+                let name_indexes = name_indexes.clone();
+                let names = names.clone();
+                let flows = flows.clone();
+                let neighbors = neighbors.clone();
+                let distances = distances.clone();
+                let best_score = best_score.clone();
+                let corpus = corpus.clone();
+                let work = work.clone();
+
+                let t = std::thread::spawn(move || {
+                    while let Some((left, right)) = work.pop() {
+                        run_simulation(
+                            core_id,
+                            name_indexes,
+                            names,
+                            flows,
+                            neighbors,
+                            distances,
+                            best_score,
+                            corpus,
+                            26,
+                            left,
+                        );
+
+                        let left_ans = best_score.load(Ordering::SeqCst);
+                        best_score.store(0, Ordering::SeqCst);
+
+                        let right_ans = run_simulation(
+                            core_id,
+                            name_indexes,
+                            names,
+                            flows,
+                            neighbors,
+                            distances,
+                            best_score,
+                            corpus,
+                            26,
+                            left,
+                        );
+
+                        let right_ans = best_score.load(Ordering::SeqCst);
+
+                        let score = left_ans + right_ans;
+                        best_score.fetch_max(score, Ordering::SeqCst);
+                    }
+                });
+
+                threads.push(t);
+            }
+
+            for t in threads {
+                let _ = t.join();
+            }
+        }};
+    }
+    */
+
+    println!("Part 1 best score: {}", best_score.load(Ordering::SeqCst));
+
+    //
+    let mut best_score = 0;
+    let mut work = Vec::new();
+    for left in 1..valuables.len() {
+        for curr_left in valuables.iter().combinations(left) {
+            // Split the valuable nodes into two groups of unique nodes
+            let curr_left = curr_left.iter().map(|x| **x).collect::<BTreeSet<_>>();
+
+            let curr_right = valuables
+                .difference(&curr_left)
+                .copied()
+                .collect::<BTreeSet<_>>();
+
+            work.push((curr_left, curr_right));
+        }
+    }
+
+    let work = Arc::new(Mutex::new(work));
+
+    // for _ in 0..4 {
+    // spawn_threads!();
+    // }
+
+    let mut threads = Vec::new();
+
+    let orig_best_score = Arc::new(AtomicUsize::new(0));
+
+    for core_id in 0..8 {
+        let name_indexes = name_indexes.clone();
+        let names = names.clone();
+        let flows = flows.clone();
+        let neighbors = neighbors.clone();
+        let distances = distances.clone();
+        let work = work.clone();
+        let best_score = orig_best_score.clone();
+
+        let t = std::thread::spawn(move || loop {
+            let Some((left, right)) = work.lock().unwrap().pop() else { break; };
+
+            let flows = flows.clone();
+            let name_indexes = name_indexes.clone();
+            let names = names.clone();
+            let neighbors = neighbors.clone();
+            let distances = distances.clone();
+            let curr_score = Arc::new(AtomicUsize::new(0));
+            let corpus = Arc::new(Mutex::new(HashSet::new()));
+
+            run_simulation(
+                core_id,
+                name_indexes.clone(),
+                names.clone(),
+                flows.clone(),
+                neighbors.clone(),
+                distances.clone(),
+                curr_score.clone(),
+                corpus.clone(),
+                26,
+                left,
+            );
+
+            let corpus = Arc::new(Mutex::new(HashSet::new()));
+            let left_ans = curr_score.load(Ordering::SeqCst);
+            let curr_score = Arc::new(AtomicUsize::new(0));
+
+            let curr_score = curr_score.clone();
+
+            run_simulation(
+                core_id,
+                name_indexes,
+                names,
+                flows,
+                neighbors,
+                distances,
+                curr_score.clone(),
+                corpus,
+                26,
+                right,
+            );
+
+            let right_ans = curr_score.load(Ordering::SeqCst);
+
+            let score = left_ans + right_ans;
+            // println!("Score: {score} best: {}", best_score.load(Ordering::SeqCst));
+
+            best_score.fetch_max(score, Ordering::SeqCst);
+        });
+
+        threads.push(t);
+    }
+
+    let work = work.clone();
+
+    let t = std::thread::spawn(move || loop {
+        let score = orig_best_score.load(Ordering::SeqCst);
+        println!("Best: {score} Work left: {}", work.lock().unwrap().len());
+        std::thread::sleep_ms(1000);
+    });
+
+    threads.push(t);
 
     for t in threads {
         t.join();

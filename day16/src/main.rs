@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 const INPUT: &str = include_str!("../input");
 
@@ -11,19 +11,20 @@ fn rdtsc() -> u64 {
     unsafe { std::arch::x86_64::_rdtsc() }
 }
 
-fn run_simulation(
+fn run_simulation<'a>(
     core_id: usize,
     name_indexes: HashMap<&str, usize>,
     names: Vec<&str>,
     flows: Vec<usize>,
     neighbors: Vec<Vec<&str>>,
     distances: Vec<HashMap<&str, i32>>,
-    best_flows: Vec<(usize, &str)>,
+    best_flows: Vec<(usize, &'a str)>,
     best_score: Arc<AtomicUsize>,
+    corpus: Arc<Mutex<HashSet<Vec<&'a str>>>>,
 ) {
     let orig_test = best_flows
         .iter()
-        .filter(|(flow, name)| *name != "AA" && *flow > 0)
+        .filter(|(flow, name)| *name != "AA")
         .map(|(_flow, name)| *name)
         .rev()
         .collect::<Vec<_>>();
@@ -37,7 +38,8 @@ fn run_simulation(
     ];
     */
 
-    let mut corpus = vec![orig_test.clone()];
+    let mut local_corpus = HashSet::new();
+    local_corpus.insert(orig_test.clone());
 
     let mut local_best_score = 0;
     let mut best_steps = orig_test.clone();
@@ -50,7 +52,7 @@ fn run_simulation(
     let len = orig_test.len();
     println!("Len: {len}");
 
-    for iters in 0..0xffffff {
+    for iters in 0..0xfffffff {
         // Stats timer every second to dump the performance of the simulations
         if stats_timer.elapsed() > std::time::Duration::from_secs(1) {
             if local_best_score > best_score.load(Ordering::SeqCst) {
@@ -64,12 +66,27 @@ fn run_simulation(
                 iters as f64 / start.elapsed().as_secs_f64() / 1024. / 1024.
             );
 
+            // Sync local corpus with the global corpus
+            if let Ok(mut corpus) = corpus.try_lock() {
+                for c in &local_corpus {
+                    corpus.insert(c.to_vec());
+                }
+
+                for c in corpus.iter() {
+                    local_corpus.insert(c.to_vec());
+                }
+            }
+
             stats_timer = std::time::Instant::now();
         }
 
         // Randomly choose either to start with the best case or a corpus case
         let mut curr_test = if rdtsc() % 2 == 0 {
-            corpus[rdtsc() as usize % corpus.len()].clone()
+            local_corpus
+                .iter()
+                .nth(rdtsc() as usize % local_corpus.len())
+                .unwrap()
+                .clone()
         } else {
             best_steps.clone()
         };
@@ -140,7 +157,7 @@ fn run_simulation(
             println!("New Best Score: {score:4} || {curr_test:?}");
             local_best_score = score;
             best_steps = curr_test.clone();
-            corpus.push(curr_test);
+            local_corpus.insert(curr_test);
         }
     }
 }
@@ -217,6 +234,7 @@ fn main() {
     println!("Calculating all distances took {:?}", start.elapsed());
 
     let best_score = Arc::new(AtomicUsize::new(0));
+    let corpus = Arc::new(Mutex::new(HashSet::new()));
     let mut threads = Vec::new();
 
     for core_id in 1..8 {
@@ -227,6 +245,7 @@ fn main() {
         let distances = distances.clone();
         let best_flows = best_flows.clone();
         let best_score = best_score.clone();
+        let corpus = corpus.clone();
 
         let t = std::thread::spawn(move || {
             run_simulation(
@@ -238,6 +257,7 @@ fn main() {
                 distances,
                 best_flows,
                 best_score,
+                corpus,
             )
         });
 

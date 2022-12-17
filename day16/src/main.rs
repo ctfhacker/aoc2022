@@ -12,6 +12,9 @@ fn rdtsc() -> u64 {
     unsafe { std::arch::x86_64::_rdtsc() }
 }
 
+/// Completely awkward fuzzing solution that isn't guarenteed to actually produce
+/// the correct result. Mostly an exercise to see if fuzzing could get the result,
+/// and it did!
 fn run_simulation<'a>(
     core_id: usize,
     name_indexes: Arc<HashMap<&str, usize>>,
@@ -37,7 +40,7 @@ fn run_simulation<'a>(
 
     let mut iters = 0;
 
-    for iters in 0..0x2ffff {
+    for iters in 0..0xf_ffff {
         // Stats timer every second to dump the performance of the simulations
         if stats_timer.elapsed() > std::time::Duration::from_secs(5) {
             if local_best_score > best_score.load(Ordering::SeqCst) {
@@ -128,12 +131,13 @@ fn run_simulation<'a>(
     }
 }
 
+/// Naively solve the problem using a sane method
 fn naive(
-    name_indexes: HashMap<&str, usize>,
-    names: Vec<&str>,
-    flows: Vec<usize>,
-    distances: Vec<HashMap<usize, usize>>,
-    valuables: BTreeSet<usize>,
+    name_indexes: &HashMap<&str, usize>,
+    names: &Vec<&str>,
+    flows: &Vec<usize>,
+    distances: &Vec<HashMap<usize, usize>>,
+    valuables: &BTreeSet<usize>,
     max_time: isize,
 ) -> usize {
     let starting_node = "AA";
@@ -150,7 +154,7 @@ fn naive(
         }
 
         // Get the valuable destination node's not currently in the path
-        for dest_index in &valuables {
+        for dest_index in valuables {
             if curr_path.contains(dest_index) {
                 continue;
             }
@@ -176,7 +180,7 @@ fn naive(
         }
     }
 
-    println!("Best score: {best_score} | Valuables: {}", valuables.len());
+    // println!("Best score: {best_score} | Valuables: {}", valuables.len());
 
     best_score
 }
@@ -186,7 +190,6 @@ fn main() {
     let mut names: Vec<&str> = Vec::new();
     let mut flows: Vec<usize> = Vec::new();
     let mut neighbors: Vec<Vec<&str>> = Vec::new();
-    // let mut best_flows = Vec::new();
 
     // Valve EG has flow rate=21; tunnels lead to valves WZ, OF, ZP, QD
     for line in INPUT.lines() {
@@ -264,47 +267,16 @@ fn main() {
         .filter_map(|(index, flow)| (names[index] != "AA" && *flow > 0).then_some(index))
         .collect::<BTreeSet<_>>();
 
-    /*
-    for (i, k) in distances.iter().enumerate() {
-        let name = names[i];
-        if name == "AA" {
-            print!("{name} | ");
-            for (k, d) in k {
-                print!("{}={d}, ", names[*k]);
-            }
-            println!();
-        }
-    }
-    */
-
-    /*
-    naive(
-        name_indexes.clone(),
-        names.clone(),
-        flows.clone(),
-        distances.clone(),
-        valuables,
-        30,
-    );
-    */
-
     let best_score = Arc::new(AtomicUsize::new(0));
-    let corpus = Arc::new(Mutex::new(HashSet::new()));
-    let mut threads = Vec::new();
     let orig_test = flows
         .iter()
         .enumerate()
         .filter_map(|(index, flow)| (names[index] != "AA" && *flow > 0).then_some(index))
         .collect::<BTreeSet<_>>();
 
-    // Get the read-only variables ready for threads
-    let name_indexes = Arc::new(name_indexes);
-    let names = Arc::new(names);
-    let flows = Arc::new(flows);
-    let neighbors = Arc::new(neighbors);
-    let distances = Arc::new(distances);
-
-    for core_id in 0..1 {
+    /*
+    // FUZZ solution: Get the read-only variables ready for threads
+    for core_id in 0..64 {
         let name_indexes = name_indexes.clone();
         let names = names.clone();
         let flows = flows.clone();
@@ -335,75 +307,14 @@ fn main() {
     for t in threads {
         let res = t.join();
     }
-
-    /*
-    macro_rules! spawn_threads {
-        () => {{
-            let corpus = Arc::new(Mutex::new(HashSet::new()));
-            let mut threads = Vec::new();
-
-            for core_id in 0..2 {
-                let name_indexes = name_indexes.clone();
-                let names = names.clone();
-                let flows = flows.clone();
-                let neighbors = neighbors.clone();
-                let distances = distances.clone();
-                let best_score = best_score.clone();
-                let corpus = corpus.clone();
-                let work = work.clone();
-
-                let t = std::thread::spawn(move || {
-                    while let Some((left, right)) = work.pop() {
-                        run_simulation(
-                            core_id,
-                            name_indexes,
-                            names,
-                            flows,
-                            neighbors,
-                            distances,
-                            best_score,
-                            corpus,
-                            26,
-                            left,
-                        );
-
-                        let left_ans = best_score.load(Ordering::SeqCst);
-                        best_score.store(0, Ordering::SeqCst);
-
-                        let right_ans = run_simulation(
-                            core_id,
-                            name_indexes,
-                            names,
-                            flows,
-                            neighbors,
-                            distances,
-                            best_score,
-                            corpus,
-                            26,
-                            left,
-                        );
-
-                        let right_ans = best_score.load(Ordering::SeqCst);
-
-                        let score = left_ans + right_ans;
-                        best_score.fetch_max(score, Ordering::SeqCst);
-                    }
-                });
-
-                threads.push(t);
-            }
-
-            for t in threads {
-                let _ = t.join();
-            }
-        }};
-    }
+    println!("Part 1 best score: {}", best_score.load(Ordering::SeqCst));
     */
 
-    println!("Part 1 best score: {}", best_score.load(Ordering::SeqCst));
+    let part1 = naive(&name_indexes, &names, &flows, &distances, &valuables, 30);
+    println!("Part 1: {part1}");
 
-    //
-    let mut best_score = 0;
+    // Calculate the total work possible by splitting the destination nodes
+    // into two groups
     let mut work = Vec::new();
     for left in 1..valuables.len() {
         for curr_left in valuables.iter().combinations(left) {
@@ -419,17 +330,82 @@ fn main() {
         }
     }
 
-    let work = Arc::new(Mutex::new(work));
+    // Get all the ingredients ready for multithreading
+    let name_indexes = Arc::new(name_indexes);
+    let names = Arc::new(names);
+    let flows = Arc::new(flows);
+    let distances = Arc::new(distances);
 
-    // for _ in 0..4 {
-    // spawn_threads!();
-    // }
+    // Initialize timers
+    let start = std::time::Instant::now();
+    let mut iters = 0;
+    let mut stats_timer = std::time::Instant::now();
+
+    // Initializ thread holders
+    let mut threads = Vec::new();
+    const CORES: usize = 16;
+    for i in 0..CORES {
+        let name_indexes = name_indexes.clone();
+        let names = names.clone();
+        let flows = flows.clone();
+        let distances = distances.clone();
+
+        let work = work.clone();
+        let chunk = work.len() / CORES;
+        let left_offset = i * chunk;
+        let right_offset = (i + 1) * chunk;
+
+        // Start each core working on its own subset of the work that needs to be done
+        let t = std::thread::spawn(move || {
+            let mut best_score = 0;
+            for (index, (left, right)) in work[left_offset..right_offset].iter().enumerate() {
+                iters += 1;
+
+                // Every second write the iterations per second for this core
+                if stats_timer.elapsed() > std::time::Duration::from_secs(1) {
+                    println!(
+                        "Core {i:02} | Iters/sec: {:8.2} | Best score: {best_score:04} | Work left: {}/{}",
+                        iters as f64 / start.elapsed().as_secs_f64(),
+                        right_offset - (left_offset + index),
+                        chunk
+                    );
+
+                    stats_timer = std::time::Instant::now();
+                }
+
+                // Perform the left and right work
+                let left = naive(&name_indexes, &names, &flows, &distances, left, 26);
+                let right = naive(&name_indexes, &names, &flows, &distances, right, 26);
+                let score = left + right;
+
+                // Keep the max score
+                best_score = best_score.max(score);
+            }
+
+            // Return the best score for this chunk
+            best_score
+        });
+
+        threads.push(t);
+    }
+
+    let mut best_score = 0;
+    for t in threads {
+        let score = t.join().unwrap();
+        best_score = best_score.max(score);
+    }
+    println!("Part 2: {best_score:?}");
+
+    /*
+    // Really silly fuzzing solution.. only for the insane
 
     let mut threads = Vec::new();
 
     let orig_best_score = Arc::new(AtomicUsize::new(0));
 
-    for core_id in 0..8 {
+    const CORES: usize = 92;
+
+    for core_id in 0..CORES {
         let name_indexes = name_indexes.clone();
         let names = names.clone();
         let flows = flows.clone();
@@ -439,8 +415,10 @@ fn main() {
         let best_score = orig_best_score.clone();
 
         let t = std::thread::spawn(move || loop {
+            // Get the work load for this thread
             let Some((left, right)) = work.lock().unwrap().pop() else { break; };
 
+            // Execute the simulation for the left work load
             let flows = flows.clone();
             let name_indexes = name_indexes.clone();
             let names = names.clone();
@@ -462,6 +440,7 @@ fn main() {
                 left,
             );
 
+            // Execute the simulation for the right work load
             let corpus = Arc::new(Mutex::new(HashSet::new()));
             let left_ans = curr_score.load(Ordering::SeqCst);
             let curr_score = Arc::new(AtomicUsize::new(0));
@@ -484,8 +463,6 @@ fn main() {
             let right_ans = curr_score.load(Ordering::SeqCst);
 
             let score = left_ans + right_ans;
-            // println!("Score: {score} best: {}", best_score.load(Ordering::SeqCst));
-
             best_score.fetch_max(score, Ordering::SeqCst);
         });
 
@@ -494,10 +471,19 @@ fn main() {
 
     let work = work.clone();
 
-    let t = std::thread::spawn(move || loop {
-        let score = orig_best_score.load(Ordering::SeqCst);
-        println!("Best: {score} Work left: {}", work.lock().unwrap().len());
-        std::thread::sleep_ms(1000);
+    let t = std::thread::spawn(move || {
+        let mut old_work = work.lock().unwrap().len();
+        loop {
+            let score = orig_best_score.load(Ordering::SeqCst);
+            let curr_work = work.lock().unwrap().len();
+            println!(
+                "Cores {CORES} | Iters/sec: {:6.2} (/core: {:6.2}), Best: {score} Work left: {curr_work}",
+                (old_work - curr_work) as f64 / 2.,
+                (old_work - curr_work) as f64 / 2. / CORES as f64
+            );
+            old_work = work.lock().unwrap().len();
+            std::thread::sleep_ms(2000);
+        }
     });
 
     threads.push(t);
@@ -505,4 +491,5 @@ fn main() {
     for t in threads {
         t.join();
     }
+    */
 }

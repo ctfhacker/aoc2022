@@ -10,7 +10,6 @@ png = "0.17.7"
 
 [workspace]
 members = [
-    "stack_array",
     "day01",
     "day02",
     "day03",

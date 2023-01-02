@@ -303,7 +303,11 @@ fn compare_packets(left: &mut Packet, right: &mut Packet) -> bool {
 }
 
 fn main() {
+    let start = std::time::Instant::now();
+
     let mut sum = 0;
+
+    // let input = std::fs::read_to_string("/home/user/workspace/aoc2022/day13/input").unwrap();
 
     for (index, section) in INPUT.split("\n\n").enumerate() {
         let index = index + 1;
@@ -352,4 +356,6 @@ fn main() {
     }
 
     println!("Part 2 PROD: {result}");
+
+    println!("Ran in {:?}", start.elapsed());
 }
